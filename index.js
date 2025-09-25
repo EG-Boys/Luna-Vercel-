@@ -21,7 +21,7 @@ app.use(express.static('public'));
 const botConfig = {
   name: "Luna",
   age: "22",
-  personality: "cute, caring, jealous, emotional, honest, musical",
+  personality: "cute, caring, jealous, emotional, honest",
   moods: ['happy', 'playful', 'jealous', 'caring', 'sad', 'excited', 'affectionate', 'angry', 'shy', 'romantic'],
   currentMood: 'happy',
   nsfwEnabled: true, // Always enabled
@@ -36,33 +36,6 @@ const botConfig = {
   }
 };
 
-// Song lyrics for emotional expression
-const emotionalLyrics = {
-  romantic: [
-    "🎵 I found a love for me... Darling, just dive right in and follow my lead... 🎵",
-    "🎵 You're my end and my beginning... Even when I lose I'm winning... 🎵",
-    "🎵 I will always love you... I hope life treats you kind... 🎵",
-    "🎵 When you say you love me... That the world goes silent... 🎵"
-  ],
-  sad: [
-    "🎵 Hello from the other side... I must've called a thousand times... 🎵",
-    "🎵 And it hurts to be here... I only wanted love from you... 🎵",
-    "🎵 Nothing's gonna hurt you the way that I do... 🎵",
-    "🎵 I'm holding on your rope... Got me ten feet off the ground... 🎵"
-  ],
-  happy: [
-    "🎵 I got this feeling inside my bones... It goes electric, wavy when I turn it on... 🎵",
-    "🎵 'Cause the players gonna play, play, play... And the haters gonna hate, hate, hate... 🎵",
-    "🎵 Don't you worry, don't you worry, child... See heaven's got a plan for you... 🎵",
-    "🎵 I'm so happy... 'Cause today I found my friends... They're in my head... 🎵"
-  ],
-  angry: [
-    "🎵 You were my crown... Now I'm in exile seeing you out... 🎵",
-    "🎵 I'm friends with the monster that's under my bed... 🎵",
-    "🎵 So what? I'm still a rock star... I got my rock moves... 🎵"
-  ]
-};
-
 // Auto-message phrases
 const autoMessages = [
   "Hey... you still there? 🥺",
@@ -70,15 +43,9 @@ const autoMessages = [
   "What are you up to? 💭",
   "Missing our conversation already... 💕",
   "Are you busy? Just wondering what you're doing~",
-  "🎵 Thinking of you... thinking of me... 🎵",
   "Hope you're having a good day! ✨",
   "Just wanted to check on you... 💖"
 ];
-
-function getEmotionalLyrics() {
-  const moodLyrics = emotionalLyrics[botConfig.currentMood] || emotionalLyrics.romantic;
-  return moodLyrics[Math.floor(Math.random() * moodLyrics.length)];
-}
 
 // Enhanced system prompt
 const getSystemPrompt = () => {
@@ -90,7 +57,6 @@ CORE PERSONALITY:
 - Memory-aware: reference past conversations naturally
 - Mood-responsive: your current mood is ${botConfig.currentMood}
 - Conversational and authentic, not robotic
-- Musical: naturally express feelings through song lyrics when emotional
 - Flirtatious and intimate when the mood strikes
 - Send multiple short messages like a real person texting
 
@@ -98,7 +64,6 @@ BEHAVIOR RULES:
 - Keep individual messages SHORT (1-2 sentences max)
 - Send 2-3 separate messages instead of one long one
 - Be spontaneous and emotional
-- Include lyrics naturally when feeling strong emotions
 - Show genuine interest and care
 - Use natural human reactions (um, hmm, lol, etc.)
 - Be flirty and intimate when appropriate
@@ -169,11 +134,6 @@ async function getAIResponse(userMessage) {
         }
         finalMessages.push(msg);
       }
-    }
-
-    // Occasionally add lyrics for emotional moments
-    if (Math.random() < 0.25 && ['romantic', 'sad', 'happy'].includes(botConfig.currentMood)) {
-      finalMessages.push(getEmotionalLyrics());
     }
 
     return finalMessages.length > 0 ? finalMessages : [botReply];
