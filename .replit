@@ -15,3 +15,15 @@ ignorePorts = false
 
 [agent]
 expertMode = true
+
+[workflows]
+runButton = "Start Luna Bot"
+
+[[workflows.workflow]]
+name = "Start Luna Bot"
+author = 47965091
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node index.js"

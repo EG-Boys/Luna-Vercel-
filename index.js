@@ -139,7 +139,7 @@ function updateMood(userMessage) {
 function shouldIncludeLyrics() {
   const emotionalMoods = ['romantic', 'sad', 'happy', 'angry'];
   if (!botConfig.lyricsEnabled) return false;
-  
+
   // 30% chance for emotional moods, 10% for others
   const chance = emotionalMoods.includes(botConfig.currentMood) ? 0.3 : 0.1;
   return Math.random() < chance;
@@ -250,7 +250,7 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     const botReply = await getAIResponse(message.trim());
-    
+
     // Add to memory
     botConfig.memory.push(
       { role: "user", content: message },
@@ -430,14 +430,14 @@ app.get('/', (req, res) => {
             <h1>💖 ${botConfig.name}</h1>
             <p>Your Musical AI Companion • ${botConfig.age} years old • ${botConfig.personality}</p>
         </div>
-        
+
         <div class="status-bar">
             <div class="mood-indicator">Mood: <span id="currentMood">${botConfig.currentMood}</span></div>
             <div class="nsfw-indicator">NSFW: <span id="nsfwStatus">${botConfig.nsfwEnabled ? 'ON' : 'OFF'}</span></div>
             <div class="lyrics-indicator">Lyrics: <span id="lyricsStatus">${botConfig.lyricsEnabled ? 'ON' : 'OFF'}</span></div>
             <div class="memory-indicator">Memory: <span id="memoryCount">0</span> chats</div>
         </div>
-        
+
         <div class="chat-container" id="chatContainer">
             <div class="message bot-message">
                 <div class="message-bubble bot-bubble">
@@ -448,11 +448,11 @@ app.get('/', (req, res) => {
                 </div>
             </div>
         </div>
-        
+
         <div class="typing-indicator" id="typingIndicator">
             ${botConfig.name} is thinking... 🎵
         </div>
-        
+
         <div class="input-area">
             <input type="text" id="messageInput" placeholder="Type your message to ${botConfig.name}..." autofocus>
             <button class="send-btn" onclick="sendMessage()">Send</button>
@@ -471,17 +471,17 @@ app.get('/', (req, res) => {
             const chat = document.getElementById('chatContainer');
             const messageDiv = document.createElement('div');
             messageDiv.className = \`message \${sender}-message\`;
-            
+
             const bubble = document.createElement('div');
             bubble.className = \`message-bubble \${sender}-bubble\`;
-            
+
             // Check if message contains lyrics (simple detection)
             if (text.includes('🎵')) {
                 bubble.classList.add('lyrics-bubble');
             }
-            
+
             bubble.innerHTML = text;
-            
+
             if (mood && sender === 'bot') {
                 const moodTag = document.createElement('span');
                 moodTag.className = 'mood-tag';
@@ -490,7 +490,7 @@ app.get('/', (req, res) => {
                 currentMood = mood;
                 document.getElementById('currentMood').textContent = mood;
             }
-            
+
             messageDiv.appendChild(bubble);
             chat.appendChild(messageDiv);
             chat.scrollTop = chat.scrollHeight;
@@ -503,7 +503,7 @@ app.get('/', (req, res) => {
 
             addMessage('user', message);
             input.value = '';
-            
+
             // Show typing indicator
             const typing = document.getElementById('typingIndicator');
             typing.style.display = 'block';
@@ -515,10 +515,10 @@ app.get('/', (req, res) => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: message })
                 });
-                
+
                 const data = await response.json();
                 typing.style.display = 'none';
-                
+
                 if (data.error) {
                     addMessage('bot', \`❌ Error: \${data.error}\`);
                 } else {
@@ -531,4 +531,109 @@ app.get('/', (req, res) => {
                     document.querySelector('.nsfw-btn').style.background = nsfwEnabled ? '#dc3545' : '#6c757d';
                     document.querySelector('.lyrics-btn').style.background = lyricsEnabled ? '#fd79a8' : '#6c757d';
                 }
-            } catch 
+            } catch (error) {
+                typing.style.display = 'none';
+                addMessage('bot', \`❌ Network error: \${error.message}\`);
+            }
+        }
+
+        async function toggleNSFW() {
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'toggle_nsfw' })
+                });
+
+                const data = await response.json();
+                addMessage('bot', data.reply, data.mood);
+                nsfwEnabled = data.nsfwEnabled;
+                document.getElementById('nsfwStatus').textContent = nsfwEnabled ? 'ON' : 'OFF';
+                document.querySelector('.nsfw-btn').style.background = nsfwEnabled ? '#dc3545' : '#6c757d';
+            } catch (error) {
+                addMessage('bot', \`❌ Error toggling NSFW: \${error.message}\`);
+            }
+        }
+
+        async function toggleLyrics() {
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'toggle_lyrics' })
+                });
+
+                const data = await response.json();
+                addMessage('bot', data.reply, data.mood);
+                lyricsEnabled = data.lyricsEnabled;
+                document.getElementById('lyricsStatus').textContent = lyricsEnabled ? 'ON' : 'OFF';
+                document.querySelector('.lyrics-btn').style.background = lyricsEnabled ? '#fd79a8' : '#6c757d';
+            } catch (error) {
+                addMessage('bot', \`❌ Error toggling lyrics: \${error.message}\`);
+            }
+        }
+
+        async function clearMemory() {
+            try {
+                const response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'clear_memory' })
+                });
+
+                const data = await response.json();
+                addMessage('bot', data.reply, data.mood);
+                document.getElementById('memoryCount').textContent = '0';
+            } catch (error) {
+                addMessage('bot', \`❌ Error clearing memory: \${error.message}\`);
+            }
+        }
+
+        // Enter key support
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Auto-resize input
+        const input = document.getElementById('messageInput');
+        input.addEventListener('input', function() {
+            this.style.height = 'auto';
+            this.style.height = this.scrollHeight + 'px';
+        });
+
+        // Load conversation history on page load
+        window.addEventListener('load', function() {
+            // Fetch bot status
+            fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'get_status' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('currentMood').textContent = data.mood;
+                document.getElementById('nsfwStatus').textContent = data.nsfwEnabled ? 'ON' : 'OFF';
+                document.getElementById('lyricsStatus').textContent = data.lyricsEnabled ? 'ON' : 'OFF';
+                document.getElementById('memoryCount').textContent = data.memoryLength;
+                nsfwEnabled = data.nsfwEnabled;
+                lyricsEnabled = data.lyricsEnabled;
+                document.querySelector('.nsfw-btn').style.background = nsfwEnabled ? '#dc3545' : '#6c757d';
+                document.querySelector('.lyrics-btn').style.background = lyricsEnabled ? '#fd79a8' : '#6c757d';
+            })
+            .catch(error => console.log('Status fetch failed:', error));
+        });
+    </script>
+</body>
+</html>
+  `);
+});
+
+// Start server
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 ${botConfig.name} is running on port ${PORT}`);
+  console.log(`🎵 Lyrics feature: ${botConfig.lyricsEnabled ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`🔞 NSFW mode: ${botConfig.nsfwEnabled ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`💭 Current mood: ${botConfig.currentMood}`);
+});
