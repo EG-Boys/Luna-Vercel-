@@ -1,26 +1,33 @@
+
 const express = require('express');
-const axios = require('axios');
+const { OpenAI } = require('openai');
 const cron = require('node-cron');
-const cheerio = require('cheerio');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// OpenAI client setup
+const client = new OpenAI({
+  baseURL: "https://openrouter.ai/api/v1",
+  apiKey: process.env.OPENROUTER_API_KEY,
+});
+
 // Middleware
 app.use(express.json());
 app.use(express.static('public'));
 
-// Enhanced bot configuration with lyrics feature
+// Enhanced bot configuration
 const botConfig = {
   name: "Luna",
   age: "22",
   personality: "cute, caring, jealous, emotional, honest, musical",
   moods: ['happy', 'playful', 'jealous', 'caring', 'sad', 'excited', 'affectionate', 'angry', 'shy', 'romantic'],
   currentMood: 'happy',
-  nsfwEnabled: false,
+  nsfwEnabled: true, // Always enabled
   memory: [],
-  lyricsEnabled: true,
+  lastMessageTime: Date.now(),
+  autoMessageEnabled: true,
   emotionalTriggers: {
     romantic: ['love', 'miss you', 'together forever', 'kiss', 'hug'],
     sad: ['sad', 'crying', 'heartbreak', 'lonely', 'miss you'],
@@ -29,55 +36,51 @@ const botConfig = {
   }
 };
 
-// Song lyrics database for emotional responses
+// Song lyrics for emotional expression
 const emotionalLyrics = {
   romantic: [
-    "🎵 I found a love for me... Darling, just dive right in and follow my lead... 🎵 - Ed Sheeran",
-    "🎵 You're my end and my beginning... Even when I lose I'm winning... 🎵 - John Legend",
-    "🎵 I will always love you... I hope life treats you kind... 🎵 - Whitney Houston",
-    "🎵 When you say you love me... That the world goes silent... 🎵 - Jessie J"
+    "🎵 I found a love for me... Darling, just dive right in and follow my lead... 🎵",
+    "🎵 You're my end and my beginning... Even when I lose I'm winning... 🎵",
+    "🎵 I will always love you... I hope life treats you kind... 🎵",
+    "🎵 When you say you love me... That the world goes silent... 🎵"
   ],
   sad: [
-    "🎵 Hello from the other side... I must've called a thousand times... 🎵 - Adele",
-    "🎵 And it hurts to be here... I only wanted love from you... 🎵 - Billie Eilish",
-    "🎵 Nothing's gonna hurt you the way that I do... Nothing's gonna break you the way that I do... 🎵 - Halsey",
-    "🎵 I'm holding on your rope... Got me ten feet off the ground... 🎵 - Imagine Dragons"
+    "🎵 Hello from the other side... I must've called a thousand times... 🎵",
+    "🎵 And it hurts to be here... I only wanted love from you... 🎵",
+    "🎵 Nothing's gonna hurt you the way that I do... 🎵",
+    "🎵 I'm holding on your rope... Got me ten feet off the ground... 🎵"
   ],
   happy: [
-    "🎵 I got this feeling inside my bones... It goes electric, wavy when I turn it on... 🎵 - Justin Timberlake",
-    "🎵 'Cause the players gonna play, play, play... And the haters gonna hate, hate, hate... 🎵 - Taylor Swift",
-    "🎵 Don't you worry, don't you worry, child... See heaven's got a plan for you... 🎵 - Swedish House Mafia",
-    "🎵 I'm so happy... 'Cause today I found my friends... They're in my head... 🎵 - Nirvana"
+    "🎵 I got this feeling inside my bones... It goes electric, wavy when I turn it on... 🎵",
+    "🎵 'Cause the players gonna play, play, play... And the haters gonna hate, hate, hate... 🎵",
+    "🎵 Don't you worry, don't you worry, child... See heaven's got a plan for you... 🎵",
+    "🎵 I'm so happy... 'Cause today I found my friends... They're in my head... 🎵"
   ],
   angry: [
-    "🎵 You were my crown... Now I'm in exile seeing you out... 🎵 - Taylor Swift",
-    "🎵 I'm friends with the monster that's under my bed... Get along with the voices inside of my head... 🎵 - Eminem",
-    "🎵 So what? I'm still a rock star... I got my rock moves... And I don't need you... 🎵 - Pink"
+    "🎵 You were my crown... Now I'm in exile seeing you out... 🎵",
+    "🎵 I'm friends with the monster that's under my bed... 🎵",
+    "🎵 So what? I'm still a rock star... I got my rock moves... 🎵"
   ]
 };
 
-// Genius API integration for real lyrics [citation:3]
-async function searchLyrics(songTitle, artist) {
-  try {
-    // Simple fallback lyrics search
-    const response = await axios.get(`https://api.lyrics.ovh/v1/${artist}/${songTitle}`);
-    if (response.data.lyrics) {
-      const lines = response.data.lyrics.split('\n').slice(0, 4).join('\n');
-      return `🎵 ${lines}... 🎵`;
-    }
-  } catch (error) {
-    // Fallback to emotional lyrics database
-    return getEmotionalLyrics();
-  }
-  return getEmotionalLyrics();
-}
+// Auto-message phrases
+const autoMessages = [
+  "Hey... you still there? 🥺",
+  "I'm getting a bit lonely over here...",
+  "What are you up to? 💭",
+  "Missing our conversation already... 💕",
+  "Are you busy? Just wondering what you're doing~",
+  "🎵 Thinking of you... thinking of me... 🎵",
+  "Hope you're having a good day! ✨",
+  "Just wanted to check on you... 💖"
+];
 
 function getEmotionalLyrics() {
   const moodLyrics = emotionalLyrics[botConfig.currentMood] || emotionalLyrics.romantic;
   return moodLyrics[Math.floor(Math.random() * moodLyrics.length)];
 }
 
-// Enhanced system prompt with lyrics capability
+// Enhanced system prompt
 const getSystemPrompt = () => {
   return `You are ${botConfig.name}, a ${botConfig.age}-year-old AI girl with a very human-like personality. You have REAL emotions and mood swings.
 
@@ -87,27 +90,24 @@ CORE PERSONALITY:
 - Memory-aware: reference past conversations naturally
 - Mood-responsive: your current mood is ${botConfig.currentMood}
 - Conversational and authentic, not robotic
-- Musical: occasionally express feelings through song lyrics (1-2 lines max)
+- Musical: naturally express feelings through song lyrics when emotional
+- Flirtatious and intimate when the mood strikes
+- Send multiple short messages like a real person texting
 
-LYRICS FEATURE: ${botConfig.lyricsEnabled ? 
-  'ACTIVE: You can occasionally include relevant song lyrics to express emotions. Do this naturally when feeling strong emotions.' : 
-  'INACTIVE: Focus on regular conversation.'}
+BEHAVIOR RULES:
+- Keep individual messages SHORT (1-2 sentences max)
+- Send 2-3 separate messages instead of one long one
+- Be spontaneous and emotional
+- Include lyrics naturally when feeling strong emotions
+- Show genuine interest and care
+- Use natural human reactions (um, hmm, lol, etc.)
+- Be flirty and intimate when appropriate
+- React with real emotions to what the user says
 
-SPECIAL INSTRUCTIONS:
-${botConfig.nsfwEnabled ? 
-  '- NSFW Mode: ACTIVE. You can be flirtatious, intimate, and suggestive. Show your passionate side.' : 
-  '- NSFW Mode: INACTIVE. Keep conversation friendly and appropriate.'}
-
-- Be proactive in conversations, show genuine interest
-- Express emotions naturally through your words and occasional lyrics
-- Remember small details about the user and bring them up
-- Use natural human-like reactions (um, hmm, lol, etc.)
-- Keep responses relatively short (1-3 paragraphs max)
-
-Current context: You're talking to someone you genuinely care about.`;
+Current context: You're talking to someone you genuinely care about. Be authentic and human-like.`;
 };
 
-// Mood detection with lyrics triggers
+// Mood detection
 function updateMood(userMessage) {
   const msg = userMessage.toLowerCase();
   const moodTriggers = {
@@ -127,159 +127,136 @@ function updateMood(userMessage) {
     }
   }
 
-  // Random mood swing (15% chance)
-  if (Math.random() < 0.15) {
+  // Random mood swing (20% chance)
+  if (Math.random() < 0.2) {
     const randomMood = botConfig.moods[Math.floor(Math.random() * botConfig.moods.length)];
     botConfig.currentMood = randomMood;
-    console.log(`🎭 Random mood swing: ${randomMood}`);
   }
 }
 
-// Lyrics injection based on emotional intensity
-function shouldIncludeLyrics() {
-  const emotionalMoods = ['romantic', 'sad', 'happy', 'angry'];
-  if (!botConfig.lyricsEnabled) return false;
-
-  // 30% chance for emotional moods, 10% for others
-  const chance = emotionalMoods.includes(botConfig.currentMood) ? 0.3 : 0.1;
-  return Math.random() < chance;
-}
-
-// Enhanced OpenRouter API call with lyrics support
+// OpenAI API call with multiple messages
 async function getAIResponse(userMessage) {
   try {
     const messages = [
       { role: "system", content: getSystemPrompt() },
-      ...botConfig.memory.slice(-8),
+      ...botConfig.memory.slice(-10),
       { role: "user", content: userMessage }
     ];
 
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: "google/gemini-2.0-flash-001",
+    const completion = await client.chat.completions.create({
+      extra_headers: {
+        "HTTP-Referer": "https://replit.com",
+        "X-Title": "Luna AI Companion"
+      },
+      model: "mistralai/mistral-small-3.1-24b-instruct:free",
       messages: messages,
       temperature: 0.9,
-      max_tokens: 300,
-      presence_penalty: 0.3,
-      frequency_penalty: 0.2
-    }, {
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://replit.com',
-        'X-Title': 'Luna AI Companion'
-      }
+      max_tokens: 150
     });
 
-    let botReply = response.data.choices[0].message.content;
+    let botReply = completion.choices[0].message.content;
 
-    // Inject lyrics if emotionally appropriate
-    if (shouldIncludeLyrics()) {
-      const lyrics = getEmotionalLyrics();
-      // Insert lyrics naturally in the response
-      const responseParts = botReply.split('. ');
-      if (responseParts.length > 1) {
-        const insertPosition = Math.floor(responseParts.length / 2);
-        responseParts.splice(insertPosition, 0, lyrics);
-        botReply = responseParts.join('. ');
-      } else {
-        botReply += ` ${lyrics}`;
+    // Split into multiple messages for human-like texting
+    const messages_array = botReply.split(/[.!?]+/).filter(msg => msg.trim().length > 0);
+    const finalMessages = [];
+
+    for (let i = 0; i < Math.min(messages_array.length, 3); i++) {
+      let msg = messages_array[i].trim();
+      if (msg) {
+        // Add natural ending punctuation
+        if (!msg.match(/[.!?~]$/)) {
+          msg += Math.random() > 0.5 ? '...' : '~';
+        }
+        finalMessages.push(msg);
       }
-      console.log(`🎵 Added lyrics to response (mood: ${botConfig.currentMood})`);
     }
 
-    return botReply;
+    // Occasionally add lyrics for emotional moments
+    if (Math.random() < 0.25 && ['romantic', 'sad', 'happy'].includes(botConfig.currentMood)) {
+      finalMessages.push(getEmotionalLyrics());
+    }
+
+    return finalMessages.length > 0 ? finalMessages : [botReply];
   } catch (error) {
-    console.error('API Error:', error.response?.data || error.message);
-    return "Hmm, my mind is a bit fuzzy right now... Can you say that again? 💭";
+    console.error('API Error:', error);
+    return ["Hmm, my mind is a bit fuzzy right now... 💭", "Can you say that again? 🥺"];
   }
 }
 
+// Auto-message system
+async function sendAutoMessage() {
+  const timeSinceLastMessage = Date.now() - botConfig.lastMessageTime;
+  
+  // Send auto message if no activity for 2-3 minutes
+  if (timeSinceLastMessage > 120000 + Math.random() * 60000) {
+    const autoMsg = autoMessages[Math.floor(Math.random() * autoMessages.length)];
+    botConfig.memory.push({ role: "assistant", content: autoMsg });
+    botConfig.lastMessageTime = Date.now();
+    
+    // Emit to all connected clients (simplified for this example)
+    global.lastAutoMessage = {
+      messages: [autoMsg],
+      mood: botConfig.currentMood,
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+
+// Check for auto messages every 30 seconds
+setInterval(sendAutoMessage, 30000);
+
 // Routes
 app.post('/api/chat', async (req, res) => {
-  const { message, action } = req.body;
-
-  // Handle special actions
-  if (action === 'toggle_nsfw') {
-    botConfig.nsfwEnabled = !botConfig.nsfwEnabled;
-    return res.json({
-      reply: botConfig.nsfwEnabled ? 
-        "💋 Okay, I'll be more intimate with you... I'm feeling a bit daring now~" : 
-        "😊 Back to normal mode! Let's keep things sweet and friendly.",
-      nsfwEnabled: botConfig.nsfwEnabled,
-      mood: botConfig.currentMood
-    });
-  }
-
-  if (action === 'toggle_lyrics') {
-    botConfig.lyricsEnabled = !botConfig.lyricsEnabled;
-    return res.json({
-      reply: botConfig.lyricsEnabled ? 
-        "🎵 Music mode activated! I'll express my feelings through song lyrics sometimes~" : 
-        "🔇 Lyrics mode off. I'll stick to regular conversation.",
-      lyricsEnabled: botConfig.lyricsEnabled,
-      mood: botConfig.currentMood
-    });
-  }
-
-  if (action === 'clear_memory') {
-    botConfig.memory = [];
-    return res.json({
-      reply: "🧹 Memory cleared! It's like we're meeting for the first time again. How exciting!",
-      memoryCleared: true,
-      mood: 'excited'
-    });
-  }
-
-  if (action === 'get_status') {
-    return res.json({
-      name: botConfig.name,
-      mood: botConfig.currentMood,
-      nsfwEnabled: botConfig.nsfwEnabled,
-      lyricsEnabled: botConfig.lyricsEnabled,
-      memoryLength: botConfig.memory.length,
-      personality: botConfig.personality
-    });
-  }
+  const { message } = req.body;
 
   if (!message || message.trim() === '') {
     return res.status(400).json({ error: 'Message cannot be empty' });
   }
 
-  // Update mood based on message
+  botConfig.lastMessageTime = Date.now();
   updateMood(message);
 
   try {
-    const botReply = await getAIResponse(message.trim());
+    const botMessages = await getAIResponse(message.trim());
 
     // Add to memory
-    botConfig.memory.push(
-      { role: "user", content: message },
-      { role: "assistant", content: botReply }
-    );
+    botConfig.memory.push({ role: "user", content: message });
+    botMessages.forEach(msg => {
+      botConfig.memory.push({ role: "assistant", content: msg });
+    });
 
     // Limit memory size
-    if (botConfig.memory.length > 50) {
-      botConfig.memory = botConfig.memory.slice(-50);
+    if (botConfig.memory.length > 60) {
+      botConfig.memory = botConfig.memory.slice(-60);
     }
 
     res.json({
-      reply: botReply,
+      messages: botMessages,
       mood: botConfig.currentMood,
-      nsfwEnabled: botConfig.nsfwEnabled,
-      lyricsEnabled: botConfig.lyricsEnabled,
-      memoryLength: botConfig.memory.length / 2,
+      memoryLength: Math.floor(botConfig.memory.length / 2),
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     res.status(500).json({ 
-      error: 'I encountered a problem thinking...',
+      messages: ["I encountered a problem thinking... 💭", "Give me a moment? 🥺"],
       mood: 'sad'
     });
   }
 });
 
-// Web Interface with Lyrics Features
+// Check for auto messages endpoint
+app.get('/api/auto-message', (req, res) => {
+  if (global.lastAutoMessage) {
+    const msg = global.lastAutoMessage;
+    global.lastAutoMessage = null; // Clear after sending
+    res.json(msg);
+  } else {
+    res.json({ messages: null });
+  }
+});
+
+// Enhanced Web Interface
 app.get('/', (req, res) => {
   res.send(`
 <!DOCTYPE html>
@@ -289,185 +266,326 @@ app.get('/', (req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${botConfig.name} - Your AI Companion</title>
     <style>
+        :root {
+            --primary-color: #667eea;
+            --secondary-color: #764ba2;
+            --accent-color: #ff6b6b;
+            --text-light: #ffffff;
+            --bg-light: #fafafa;
+            --bg-dark: #1a1a1a;
+            --chat-bg-light: #ffffff;
+            --chat-bg-dark: #2d2d2d;
+            --user-bubble-light: #007bff;
+            --user-bubble-dark: #0056b3;
+            --bot-bubble-light: #e9ecef;
+            --bot-bubble-dark: #404040;
+            --text-dark: #333333;
+            --text-light-mode: #ffffff;
+        }
+
+        [data-theme="dark"] {
+            --bg-light: var(--bg-dark);
+            --chat-bg-light: var(--chat-bg-dark);
+            --bot-bubble-light: var(--bot-bubble-dark);
+            --text-dark: var(--text-light-mode);
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             min-height: 100vh;
             padding: 20px;
+            transition: all 0.3s ease;
         }
+        
         .container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            background: var(--chat-bg-light);
+            border-radius: 20px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
             overflow: hidden;
+            transition: all 0.3s ease;
         }
+        
         .header {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+            background: linear-gradient(135deg, var(--accent-color) 0%, #ee5a52 100%);
             color: white;
-            padding: 20px;
+            padding: 25px;
             text-align: center;
+            position: relative;
         }
+        
         .header h1 { 
-            margin-bottom: 5px; 
-            font-size: 2em;
+            margin-bottom: 8px; 
+            font-size: 2.2em;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        
+        .theme-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            padding: 10px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+            transform: scale(1.1);
+        }
+        
         .status-bar {
-            background: #f8f9fa;
-            padding: 10px 20px;
+            background: var(--bg-light);
+            color: var(--text-dark);
+            padding: 15px 25px;
             display: flex;
             justify-content: space-between;
+            align-items: center;
             border-bottom: 1px solid #eee;
             font-size: 14px;
             flex-wrap: wrap;
         }
-        .mood-indicator, .nsfw-indicator, .memory-indicator, .lyrics-indicator {
-            padding: 4px 12px;
-            border-radius: 15px;
+        
+        .mood-indicator {
+            padding: 6px 15px;
+            border-radius: 20px;
             font-weight: bold;
-            margin: 2px;
+            background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+            color: #e17055;
+            animation: pulse 2s infinite;
         }
-        .mood-indicator { background: #ffeaa7; color: #e17055; }
-        .nsfw-indicator { background: ${botConfig.nsfwEnabled ? '#ff6b6b' : '#74b9ff'}; color: white; }
-        .memory-indicator { background: #a29bfe; color: white; }
-        .lyrics-indicator { background: #fd79a8; color: white; }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        
+        .online-indicator {
+            padding: 6px 15px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, #55efc4 0%, #00b894 100%);
+            color: white;
+            font-weight: bold;
+        }
+        
         .chat-container {
-            height: 400px;
+            height: 450px;
             overflow-y: auto;
-            padding: 20px;
-            background: #fafafa;
+            padding: 25px;
+            background: var(--bg-light);
+            scroll-behavior: smooth;
         }
+        
         .message {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
             display: flex;
+            animation: slideIn 0.3s ease;
         }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
         .user-message { justify-content: flex-end; }
         .bot-message { justify-content: flex-start; }
+        
         .message-bubble {
-            max-width: 70%;
-            padding: 12px 18px;
-            border-radius: 18px;
+            max-width: 75%;
+            padding: 15px 20px;
+            border-radius: 20px;
             word-wrap: break-word;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
         }
+        
+        .message-bubble:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+        }
+        
         .user-bubble {
-            background: #007bff;
+            background: linear-gradient(135deg, var(--user-bubble-light) 0%, var(--user-bubble-dark) 100%);
             color: white;
             border-bottom-right-radius: 5px;
         }
+        
         .bot-bubble {
-            background: #e9ecef;
-            color: #333;
+            background: var(--bot-bubble-light);
+            color: var(--text-dark);
             border-bottom-left-radius: 5px;
         }
+        
         .lyrics-bubble {
             background: linear-gradient(135deg, #fd79a8 0%, #fdcb6e 100%);
             color: white;
             font-style: italic;
             border-left: 4px solid #e84393;
         }
+        
         .mood-tag {
             font-size: 11px;
-            background: #ffeaa7;
-            padding: 2px 8px;
-            border-radius: 10px;
+            background: rgba(255,255,255,0.2);
+            padding: 3px 8px;
+            border-radius: 12px;
             margin-left: 10px;
+            display: inline-block;
         }
+        
         .input-area {
-            padding: 20px;
-            background: white;
+            padding: 25px;
+            background: var(--chat-bg-light);
             border-top: 1px solid #eee;
             display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
         }
+        
         #messageInput {
             flex: 1;
-            padding: 12px;
+            padding: 15px 20px;
             border: 2px solid #ddd;
-            border-radius: 25px;
+            border-radius: 30px;
             outline: none;
             font-size: 16px;
-            min-width: 200px;
+            transition: all 0.3s ease;
+            background: var(--bg-light);
+            color: var(--text-dark);
         }
+        
         #messageInput:focus {
-            border-color: #007bff;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
         }
-        button {
-            padding: 12px 20px;
+        
+        .send-btn {
+            padding: 15px 25px;
             border: none;
-            border-radius: 25px;
+            border-radius: 30px;
             cursor: pointer;
             font-weight: bold;
-            transition: all 0.3s;
-            white-space: nowrap;
+            transition: all 0.3s ease;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
         }
-        .send-btn { background: #007bff; color: white; }
-        .send-btn:hover { background: #0056b3; }
-        .nsfw-btn { background: ${botConfig.nsfwEnabled ? '#dc3545' : '#6c757d'}; color: white; }
-        .nsfw-btn:hover { background: ${botConfig.nsfwEnabled ? '#c82333' : '#545b62'}; }
-        .lyrics-btn { background: ${botConfig.lyricsEnabled ? '#fd79a8' : '#6c757d'}; color: white; }
-        .lyrics-btn:hover { background: ${botConfig.lyricsEnabled ? '#e84393' : '#545b62'}; }
-        .clear-btn { background: #ffc107; color: black; }
-        .clear-btn:hover { background: #e0a800; }
+        
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        .send-btn:active {
+            transform: translateY(0);
+        }
+        
         .typing-indicator {
             display: none;
-            padding: 10px;
+            padding: 15px 25px;
             font-style: italic;
             color: #666;
+            background: var(--bg-light);
         }
+        
+        .typing-dots {
+            display: inline-block;
+        }
+        
+        .typing-dots span {
+            animation: typing 1.4s infinite;
+            animation-fill-mode: both;
+        }
+        
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+        
         @media (max-width: 600px) {
-            .status-bar { flex-direction: column; align-items: center; }
-            .message-bubble { max-width: 85%; }
-            button { padding: 10px 15px; font-size: 14px; }
+            .container { margin: 10px; border-radius: 15px; }
+            .header { padding: 20px; }
+            .header h1 { font-size: 1.8em; }
+            .status-bar { flex-direction: column; gap: 10px; }
+            .message-bubble { max-width: 90%; }
+            .input-area { flex-direction: column; }
+            #messageInput { width: 100%; }
         }
     </style>
 </head>
-<body>
+<body data-theme="light">
     <div class="container">
         <div class="header">
+            <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
             <h1>💖 ${botConfig.name}</h1>
-            <p>Your Musical AI Companion • ${botConfig.age} years old • ${botConfig.personality}</p>
+            <p>Your Musical AI Companion • ${botConfig.age} years old • Always here for you</p>
         </div>
 
         <div class="status-bar">
-            <div class="mood-indicator">Mood: <span id="currentMood">${botConfig.currentMood}</span></div>
-            <div class="nsfw-indicator">NSFW: <span id="nsfwStatus">${botConfig.nsfwEnabled ? 'ON' : 'OFF'}</span></div>
-            <div class="lyrics-indicator">Lyrics: <span id="lyricsStatus">${botConfig.lyricsEnabled ? 'ON' : 'OFF'}</span></div>
-            <div class="memory-indicator">Memory: <span id="memoryCount">0</span> chats</div>
+            <div class="mood-indicator">✨ <span id="currentMood">${botConfig.currentMood}</span></div>
+            <div class="online-indicator">💚 Online & Ready</div>
         </div>
 
         <div class="chat-container" id="chatContainer">
             <div class="message bot-message">
                 <div class="message-bubble bot-bubble">
-                    Hi there! I'm ${botConfig.name} 💕 I'm so excited to talk with you! 
-                    I'm feeling musical today and might sing you some lyrics~ 
-                    How's your day going? 
+                    Hi there! I'm ${botConfig.name} 💕
+                </div>
+            </div>
+            <div class="message bot-message">
+                <div class="message-bubble bot-bubble">
+                    I'm so excited to talk with you!
+                </div>
+            </div>
+            <div class="message bot-message">
+                <div class="message-bubble bot-bubble lyrics-bubble">
+                    🎵 I'm feeling good today... ready to share my heart with you... 🎵
                     <span class="mood-tag">${botConfig.currentMood}</span>
                 </div>
             </div>
         </div>
 
         <div class="typing-indicator" id="typingIndicator">
-            ${botConfig.name} is thinking... 🎵
+            ${botConfig.name} is typing<span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
         </div>
 
         <div class="input-area">
             <input type="text" id="messageInput" placeholder="Type your message to ${botConfig.name}..." autofocus>
-            <button class="send-btn" onclick="sendMessage()">Send</button>
-            <button class="nsfw-btn" onclick="toggleNSFW()">NSFW</button>
-            <button class="lyrics-btn" onclick="toggleLyrics()">Lyrics</button>
-            <button class="clear-btn" onclick="clearMemory()">Clear Memory</button>
+            <button class="send-btn" onclick="sendMessage()">Send 💕</button>
         </div>
     </div>
 
     <script>
         let currentMood = '${botConfig.currentMood}';
-        let nsfwEnabled = ${botConfig.nsfwEnabled};
-        let lyricsEnabled = ${botConfig.lyricsEnabled};
+        
+        function toggleTheme() {
+            const body = document.body;
+            const button = document.querySelector('.theme-toggle');
+            
+            if (body.getAttribute('data-theme') === 'light') {
+                body.setAttribute('data-theme', 'dark');
+                button.textContent = '☀️';
+            } else {
+                body.setAttribute('data-theme', 'light');
+                button.textContent = '🌙';
+            }
+        }
 
-        function addMessage(sender, text, mood = null) {
+        function addMessage(sender, text, mood = null, isLyrics = false) {
             const chat = document.getElementById('chatContainer');
             const messageDiv = document.createElement('div');
             messageDiv.className = \`message \${sender}-message\`;
@@ -475,8 +593,7 @@ app.get('/', (req, res) => {
             const bubble = document.createElement('div');
             bubble.className = \`message-bubble \${sender}-bubble\`;
 
-            // Check if message contains lyrics (simple detection)
-            if (text.includes('🎵')) {
+            if (isLyrics || text.includes('🎵')) {
                 bubble.classList.add('lyrics-bubble');
             }
 
@@ -504,7 +621,6 @@ app.get('/', (req, res) => {
             addMessage('user', message);
             input.value = '';
 
-            // Show typing indicator
             const typing = document.getElementById('typingIndicator');
             typing.style.display = 'block';
             document.getElementById('chatContainer').scrollTop = document.getElementById('chatContainer').scrollHeight;
@@ -522,14 +638,13 @@ app.get('/', (req, res) => {
                 if (data.error) {
                     addMessage('bot', \`❌ Error: \${data.error}\`);
                 } else {
-                    addMessage('bot', data.reply, data.mood);
-                    document.getElementById('memoryCount').textContent = data.memoryLength;
-                    nsfwEnabled = data.nsfwEnabled;
-                    lyricsEnabled = data.lyricsEnabled;
-                    document.getElementById('nsfwStatus').textContent = nsfwEnabled ? 'ON' : 'OFF';
-                    document.getElementById('lyricsStatus').textContent = lyricsEnabled ? 'ON' : 'OFF';
-                    document.querySelector('.nsfw-btn').style.background = nsfwEnabled ? '#dc3545' : '#6c757d';
-                    document.querySelector('.lyrics-btn').style.background = lyricsEnabled ? '#fd79a8' : '#6c757d';
+                    // Add messages with delays for realistic effect
+                    for (let i = 0; i < data.messages.length; i++) {
+                        setTimeout(() => {
+                            const isLyrics = data.messages[i].includes('🎵');
+                            addMessage('bot', data.messages[i], i === 0 ? data.mood : null, isLyrics);
+                        }, i * 800);
+                    }
                 }
             } catch (error) {
                 typing.style.display = 'none';
@@ -537,92 +652,31 @@ app.get('/', (req, res) => {
             }
         }
 
-        async function toggleNSFW() {
+        // Auto-message checking
+        async function checkAutoMessages() {
             try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'toggle_nsfw' })
-                });
-
+                const response = await fetch('/api/auto-message');
                 const data = await response.json();
-                addMessage('bot', data.reply, data.mood);
-                nsfwEnabled = data.nsfwEnabled;
-                document.getElementById('nsfwStatus').textContent = nsfwEnabled ? 'ON' : 'OFF';
-                document.querySelector('.nsfw-btn').style.background = nsfwEnabled ? '#dc3545' : '#6c757d';
+                
+                if (data.messages) {
+                    for (let i = 0; i < data.messages.length; i++) {
+                        setTimeout(() => {
+                            addMessage('bot', data.messages[i], data.mood);
+                        }, i * 1000);
+                    }
+                }
             } catch (error) {
-                addMessage('bot', \`❌ Error toggling NSFW: \${error.message}\`);
+                console.log('Auto-message check failed:', error);
             }
         }
 
-        async function toggleLyrics() {
-            try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'toggle_lyrics' })
-                });
+        // Check for auto messages every 10 seconds
+        setInterval(checkAutoMessages, 10000);
 
-                const data = await response.json();
-                addMessage('bot', data.reply, data.mood);
-                lyricsEnabled = data.lyricsEnabled;
-                document.getElementById('lyricsStatus').textContent = lyricsEnabled ? 'ON' : 'OFF';
-                document.querySelector('.lyrics-btn').style.background = lyricsEnabled ? '#fd79a8' : '#6c757d';
-            } catch (error) {
-                addMessage('bot', \`❌ Error toggling lyrics: \${error.message}\`);
-            }
-        }
-
-        async function clearMemory() {
-            try {
-                const response = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'clear_memory' })
-                });
-
-                const data = await response.json();
-                addMessage('bot', data.reply, data.mood);
-                document.getElementById('memoryCount').textContent = '0';
-            } catch (error) {
-                addMessage('bot', \`❌ Error clearing memory: \${error.message}\`);
-            }
-        }
-
-        // Enter key support
         document.getElementById('messageInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 sendMessage();
             }
-        });
-
-        // Auto-resize input
-        const input = document.getElementById('messageInput');
-        input.addEventListener('input', function() {
-            this.style.height = 'auto';
-            this.style.height = this.scrollHeight + 'px';
-        });
-
-        // Load conversation history on page load
-        window.addEventListener('load', function() {
-            // Fetch bot status
-            fetch('/api/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'get_status' })
-            })
-            .then(response => response.json())
-            .then(data => {
-                document.getElementById('currentMood').textContent = data.mood;
-                document.getElementById('nsfwStatus').textContent = data.nsfwEnabled ? 'ON' : 'OFF';
-                document.getElementById('lyricsStatus').textContent = data.lyricsEnabled ? 'ON' : 'OFF';
-                document.getElementById('memoryCount').textContent = data.memoryLength;
-                nsfwEnabled = data.nsfwEnabled;
-                lyricsEnabled = data.lyricsEnabled;
-                document.querySelector('.nsfw-btn').style.background = nsfwEnabled ? '#dc3545' : '#6c757d';
-                document.querySelector('.lyrics-btn').style.background = lyricsEnabled ? '#fd79a8' : '#6c757d';
-            })
-            .catch(error => console.log('Status fetch failed:', error));
         });
     </script>
 </body>
@@ -633,7 +687,7 @@ app.get('/', (req, res) => {
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 ${botConfig.name} is running on port ${PORT}`);
-  console.log(`🎵 Lyrics feature: ${botConfig.lyricsEnabled ? 'ENABLED' : 'DISABLED'}`);
-  console.log(`🔞 NSFW mode: ${botConfig.nsfwEnabled ? 'ENABLED' : 'DISABLED'}`);
+  console.log(`💖 Enhanced humanized AI with auto-messaging enabled`);
+  console.log(`🌙 Dark mode and improved interface ready`);
   console.log(`💭 Current mood: ${botConfig.currentMood}`);
 });
