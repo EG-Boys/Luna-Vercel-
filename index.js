@@ -143,30 +143,27 @@ async function getAIResponse(userMessage) {
   }
 }
 
-// Auto-message system with better tracking
-let autoMessageQueue = [];
-
+// Auto-message system
 async function sendAutoMessage() {
   const timeSinceLastMessage = Date.now() - botConfig.lastMessageTime;
   
-  // Send auto message if no activity for 1-2 minutes (shortened for better experience)
-  if (timeSinceLastMessage > 60000 + Math.random() * 60000) {
+  // Send auto message if no activity for 2-3 minutes
+  if (timeSinceLastMessage > 120000 + Math.random() * 60000) {
     const autoMsg = autoMessages[Math.floor(Math.random() * autoMessages.length)];
     botConfig.memory.push({ role: "assistant", content: autoMsg });
     botConfig.lastMessageTime = Date.now();
     
-    // Add to queue for clients to pick up
-    autoMessageQueue.push({
+    // Emit to all connected clients (simplified for this example)
+    global.lastAutoMessage = {
       messages: [autoMsg],
       mood: botConfig.currentMood,
-      timestamp: new Date().toISOString(),
-      id: Date.now()
-    });
+      timestamp: new Date().toISOString()
+    };
   }
 }
 
-// Check for auto messages every 20 seconds (more frequent)
-setInterval(sendAutoMessage, 20000);
+// Check for auto messages every 30 seconds
+setInterval(sendAutoMessage, 30000);
 
 // Routes
 app.post('/api/chat', async (req, res) => {
@@ -208,10 +205,11 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Check for auto messages endpoint with better handling
+// Check for auto messages endpoint
 app.get('/api/auto-message', (req, res) => {
-  if (autoMessageQueue.length > 0) {
-    const msg = autoMessageQueue.shift(); // Get first message and remove it
+  if (global.lastAutoMessage) {
+    const msg = global.lastAutoMessage;
+    global.lastAutoMessage = null; // Clear after sending
     res.json(msg);
   } else {
     res.json({ messages: null });
@@ -273,9 +271,8 @@ app.get('/', (req, res) => {
             display: flex;
             justify-content: center;
             align-items: center;
-            transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
-            -webkit-overflow-scrolling: touch;
         }
 
         .chat-app {
@@ -370,22 +367,18 @@ app.get('/', (req, res) => {
             background: var(--primary-bg);
             scroll-behavior: smooth;
             position: relative;
-            will-change: scroll-position;
-            -webkit-overflow-scrolling: touch;
-            overscroll-behavior: contain;
         }
 
         .message-group {
             display: flex;
             margin-bottom: 12px;
-            animation: slideInMessage 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            will-change: transform, opacity;
+            animation: fadeInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        @keyframes slideInMessage {
+        @keyframes fadeInUp {
             from { 
                 opacity: 0; 
-                transform: translateY(15px) scale(0.98); 
+                transform: translateY(20px) scale(0.95); 
             }
             to { 
                 opacity: 1; 
@@ -410,9 +403,7 @@ app.get('/', (req, res) => {
             box-shadow: 0 1px 2px var(--shadow);
             font-size: 15px;
             line-height: 1.4;
-            transition: all 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            will-change: transform;
-            backface-visibility: hidden;
+            transition: all 0.2s ease;
         }
 
         .user-bubble {
@@ -504,9 +495,8 @@ app.get('/', (req, res) => {
             max-height: 120px;
             min-height: 48px;
             font-family: inherit;
-            transition: all 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transition: all 0.2s ease;
             border: 1px solid var(--border-color);
-            will-change: height;
         }
 
         .message-input:focus {
@@ -746,11 +736,9 @@ app.get('/', (req, res) => {
             const isNearBottom = chatMessages.scrollTop + chatMessages.clientHeight >= chatMessages.scrollHeight - 100;
             
             if (force || isNearBottom) {
-                requestAnimationFrame(() => {
-                    chatMessages.scrollTo({
-                        top: chatMessages.scrollHeight,
-                        behavior: 'smooth'
-                    });
+                chatMessages.scrollTo({
+                    top: chatMessages.scrollHeight,
+                    behavior: 'smooth'
                 });
             }
         }
@@ -773,16 +761,9 @@ app.get('/', (req, res) => {
             messageBubble.appendChild(messageText);
             messageBubble.appendChild(messageTime);
             messageGroup.appendChild(messageBubble);
-            
-            // Use DocumentFragment for better performance
-            const fragment = document.createDocumentFragment();
-            fragment.appendChild(messageGroup);
-            chatMessages.appendChild(fragment);
+            chatMessages.appendChild(messageGroup);
 
-            // Smooth scroll with animation frame
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => scrollToBottom(true));
-            });
+            setTimeout(() => scrollToBottom(true), 50);
         }
 
         function showTyping() {
@@ -810,17 +791,14 @@ app.get('/', (req, res) => {
             
             if (!message) return;
 
-            // Show immediate feedback but keep input enabled
+            // Disable input and button with visual feedback
+            input.disabled = true;
             sendBtn.disabled = true;
             sendBtn.style.opacity = '0.6';
             
             addMessage('user', message);
             input.value = '';
-            input.style.height = '48px'; // Reset height smoothly
-            
-            // Keep focus on input for continuous typing (WhatsApp-like)
-            setTimeout(() => input.focus(), 50);
-            
+            input.style.height = 'auto';
             showTyping();
 
             try {
@@ -836,54 +814,47 @@ app.get('/', (req, res) => {
                 if (data.error) {
                     addMessage('bot', \`Error: \${data.error}\`);
                 } else {
-                    // Add messages with more natural timing
+                    // Add messages with realistic delays
                     for (let i = 0; i < data.messages.length; i++) {
                         setTimeout(() => {
                             addMessage('bot', data.messages[i]);
-                        }, i * 600 + 200);
+                        }, i * 800 + 300);
                     }
                 }
             } catch (error) {
                 hideTyping();
                 addMessage('bot', \`Connection error. Please try again.\`);
             } finally {
-                // Re-enable send button quickly
+                // Re-enable input and button
                 setTimeout(() => {
+                    input.disabled = false;
                     sendBtn.disabled = false;
                     sendBtn.style.opacity = '1';
-                }, 200);
+                    input.focus();
+                }, 500);
             }
         }
 
-        // Auto-message checking with better handling
+        // Auto-message checking
         async function checkAutoMessages() {
             try {
                 const response = await fetch('/api/auto-message');
                 const data = await response.json();
                 
-                if (data.messages && data.messages.length > 0) {
-                    // Show typing indicator first
-                    showTyping();
-                    
-                    setTimeout(() => {
-                        hideTyping();
-                        for (let i = 0; i < data.messages.length; i++) {
-                            setTimeout(() => {
-                                addMessage('bot', data.messages[i]);
-                            }, i * 600 + 100);
-                        }
-                    }, 1000); // Show typing for 1 second
+                if (data.messages) {
+                    for (let i = 0; i < data.messages.length; i++) {
+                        setTimeout(() => {
+                            addMessage('bot', data.messages[i]);
+                        }, i * 800);
+                    }
                 }
             } catch (error) {
                 console.log('Auto-message check failed:', error);
             }
         }
 
-        // Check for auto messages every 5 seconds (more frequent for better experience)
-        setInterval(checkAutoMessages, 5000);
-        
-        // Initial check after 30 seconds
-        setTimeout(checkAutoMessages, 30000);
+        // Check for auto messages every 10 seconds
+        setInterval(checkAutoMessages, 10000);
 
         // Enhanced input handling
         document.addEventListener('DOMContentLoaded', function() {
@@ -897,22 +868,14 @@ app.get('/', (req, res) => {
                 }
             });
 
-            // Auto-resize input with smoother handling
+            // Auto-resize input with improved handling
             input.addEventListener('input', function() {
-                requestAnimationFrame(() => {
-                    this.style.height = 'auto';
-                    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
-                    
-                    // Scroll to bottom when typing (smoother)
-                    scrollToBottom(true);
-                });
-            });
-            
-            // Prevent input from losing focus unnecessarily
-            input.addEventListener('blur', function(e) {
-                // Re-focus if not clicking on send button
-                if (e.relatedTarget !== sendBtn) {
-                    setTimeout(() => this.focus(), 100);
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+                
+                // Scroll to bottom when typing
+                if (keyboardOpen) {
+                    setTimeout(() => scrollToBottom(true), 50);
                 }
             });
 
